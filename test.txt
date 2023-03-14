@@ -1,0 +1,6 @@
+#0 directory/file_1 
+#1 directory/file_1 5 2020-05-06 23-20-30 nice epic bruh moment
+#1 directory/file_2 4 1980-04-01 15-30-45 moment epic
+#1 directory/file_3 3 2005-10-15 02-08-45 nice like
+#1 directory/file_4 6 2002-04-28 03-28-55 bruh moment
+#1 directory/file_5 4 2012-07-02 11-12-13 epic
