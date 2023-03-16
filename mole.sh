@@ -9,13 +9,13 @@
 # - Text wrapper
 
 
+
 # - - - - - - - - - - - - #
 #         Options         #
 # - - - - - - - - - - - - #
 
 POSIXLY_CORRECT=yes
 export LC_ALL=C
-
 
 
 
@@ -92,47 +92,28 @@ check_filters_args() {
 
 
 
-# - - - - - - - - - - - - #
-#        Variables        #
-# - - - - - - - - - - - - #
-
-# script options and arguments
-bHelpOpt=false              # [1] -h 
-bFileOpenOpt=false          # [2] -g
-bArgFileGroup=false   
-bDirectoryOpenOpt=false     # [3] -m 
-bArgMostOften=false  
-bListOpt=false              # [4] list 
-bSecretLogOpt=false         # [5] secret-log
-
-# script arg errors
-bErrorOpt=false             # [6] error first-arg or wrongopt
-bErrorArgNum=false          # wrong number of arguments
-bErrorPath=false            # wrong path
-bErrorFilters=false         # wrong filters
-bErrorMoleEnv=false         # wrong or non existing mole environment
-
-# script argdata
-strFilePath=""                    # [2] FILE argument
-strFileGroup=""                   # [2] [-g GROUP] argument
-strDirectoryPath=""               # [3] [DIRECTORY] argument
-strEditor=""                      # system editor
-
-
-
-
-
-
-
-# - - - - - - - - - - - - - #
-#      Argument parsing     #
-# - - - - - - - - - - - - - #
+# - - - - - - - - - - - - - - - - #
+#      Parse arguments - [0]      #
+# - - - - - - - - - - - - - - - - #
  
-# mole -h                                                                   [1]
-# mole [-g GROUP] FILE                                                      [2]                                   
-# mole [-m] [FILTERS] [DIRECTORY]                                           [3]
-# mole list [FILTERS] [DIRECTORY]                                           [4]                
-# mole secret-log [-b DATE] [-a DATE] [DIRECTORY1 [DIRECTORY2 [...]]]       [5]
+# parse args variables
+bParseDirectory=false        # [2] open file in a directory
+bParseDirectoryMost=false    # [2] when opening file in a directory open one with the most files
+bParseFile=false             # [3] open file through given path
+bParseFileGroup=false        # [3] when opening a file should it be given a group
+bParseList=false             # [4] list all the opened files to terminal
+bParseLog=false              # [5] list all file through log
+bParseHelp=false             # [?] print help to terminal
+
+# parse strings
+strParseFilePath=""          # [2] FILE argument, user given file path
+strParseFileGroup=""         # [2] [-g GROUP] argument, user given group
+strParseDirectoryPath=""     # [3] [DIRECTORY] argument, user given directory path
+
+# parse errors
+bErrorParseArgNum=false      # wrong number of arguments
+bErrorParsePath=false        # wrong path was given
+bErrorParseFilters=false     # wrong filters were given
 
 # - checking arguments
 case $1 in
@@ -140,9 +121,9 @@ case $1 in
     -h)
         # check num of arguments
         if [ $# -ne 1 ]; then
-            bErrorArgNum=true
+            bErrorParseArgNum=true
         else 
-            bHelpOpt=true
+            bParseHelp=true
         fi
         ;;
 
@@ -155,14 +136,14 @@ case $1 in
             if [ -d "${*: -1}" ]; then
 
                 #  check if the other arguments are filters
-                if [ $bErrorPath = false ]; then
+                if [ $bErrorParsePath = false ]; then
                     if check_filters_args "${*: -$#+1:$#-2}"; then
-                        bDirectoryOpenOpt=true
-                        strDirectoryPath=${*: -1}
-                        bArgMostOften=true
+                        bParseDirectory=true
+                        strParseDirectoryPath=${*: -1}
+                        bParseDirectoryMost=true
                     else
-                        bErrorFilters=true
-                        bDirectoryOpenOpt=false
+                        bErrorParseFilters=true
+                        bParseDirectory=false
                     fi
                 fi
 
@@ -171,24 +152,24 @@ case $1 in
                 if [ "-a" = "${*: -2:1}" ] || [ "-b" = "${*: -2:1}" ] || [ "-g" = "${*: -2:1}" ]; then
                     
                     #  check if the other arguments are filters
-                    if [ $bErrorPath = false ]; then
+                    if [ $bErrorParsePath = false ]; then
                         if check_filters_args "${*: -$#+1:$#}"; then
-                            bDirectoryOpenOpt=true
-                            strDirectoryPath=$PWD
-                            bArgMostOften=true
+                            bParseDirectory=true
+                            strParseDirectoryPath=$PWD
+                            bParseDirectoryMost=true
                         else
-                            bErrorFilters=true
-                            bDirectoryOpenOpt=false
+                            bErrorParseFilters=true
+                            bParseDirectory=false
                         fi
                     fi
 
             # wrong additional arguments
                 else
-                    bErrorFilters=true
-                    bDirectoryOpenOpt=false
+                    bErrorParseFilters=true
+                    bParseDirectory=false
 
                     if [ $(($# % 2)) -eq 0 ] || [ $# -gt 7 ]; then
-                            bErrorPath=true
+                            bErrorParsePath=true
                     fi
                 fi
             fi
@@ -196,15 +177,15 @@ case $1 in
 
             # check if path is given
             if [ -d "${*: -1}" ]; then
-                bDirectoryOpenOpt=true
-                strDirectoryPath=${*: -1}
-                bArgMostOften=true
+                bParseDirectory=true
+                strParseDirectoryPath=${*: -1}
+                bParseDirectoryMost=true
             
             # else open current directory
             else
-                bDirectoryOpenOpt=true
-                strDirectoryPath=$PWD
-                bArgMostOften=true
+                bParseDirectory=true
+                strParseDirectoryPath=$PWD
+                bParseDirectoryMost=true
             fi
         fi
         ;;
@@ -214,37 +195,37 @@ case $1 in
 
         # no directory given and no filters
         if [ $# -eq 1 ]; then
-            bListOpt=true
-            strDirectoryPath=$PWD
+            bParseList=true
+            strParseDirectoryPath=$PWD
         else
 
         # directory path is given
         if [ -d "${*: -1}" ]; then
-            bListOpt=true
-            strDirectoryPath=${*: -1}
+            bParseList=true
+            strParseDirectoryPath=${*: -1}
             
             #  check if the other arguments are filters
-                if [ $bErrorPath = false ] && [ $# -ne 2 ]; then
+                if [ $bErrorParsePath = false ] && [ $# -ne 2 ]; then
                     if check_filters_args "${*: -$#+1:$#-2}"; then
-                        bListOpt=true
+                        bParseList=true
                     else
-                        bErrorFilters=true
-                        bListOpt=false
+                        bErrorParseFilters=true
+                        bParseList=false
                     fi
                 fi
             else
 
                 #  check if the other arguments are filters
-                if [ $bErrorPath = false ]; then
+                if [ $bErrorParsePath = false ]; then
                     if check_filters_args "${*: -$#+1:$#}"; then
-                        bListOpt=true
-                        strDirectoryPath=$PWD
+                        bParseList=true
+                        strParseDirectoryPath=$PWD
                     else
-                        bErrorFilters=true
-                        bDirectoryOpenOpt=false
+                        bErrorParseFilters=true
+                        bParseDirectory=false
 
                         if [ $(($# % 2)) -eq 0 ] || [ $# -gt 7 ]; then
-                            bErrorPath=true
+                            bErrorParsePath=true
                         fi
                     fi
                 fi  
@@ -254,22 +235,22 @@ case $1 in
 
     # secret-log tag
     secret-log)
-        bSecretLogOpt=true
+        bParseLog=true
 
         # checking if there is directory path
         case $# in
         2)  
-            strDirectoryPath=$2
+            strParseDirectoryPath=$2
             ;;
         4)
-            strDirectoryPath=$4
+            strParseDirectoryPath=$4
             ;;
         6)
-            strDirectoryPath=$6
+            strParseDirectoryPath=$6
             ;;
 
         *)
-            strDirectoryPath="//secret-log//"
+            strParseDirectoryPath="//secret-log//"
             ;;
         esac
 
@@ -277,7 +258,7 @@ case $1 in
 
         # get the last argument of the script
         if [ -z "${*: -1}" ] || [ $# -gt 6 ]; then
-            bErrorPath=true
+            bErrorParsePath=true
         fi
 
 
@@ -296,8 +277,8 @@ case $1 in
             
             # wrong filters
                 else
-                    bErrorFilters=true
-                    bSecretLogOpt=false
+                    bErrorParseFilters=true
+                    bParseLog=false
                 fi
             fi
         fi
@@ -307,8 +288,8 @@ case $1 in
                 bFilterDateAfter=true
                 strFilterDateAfter=$3
             else 
-                bErrorFilters=true
-                bSecretLogOpt=false
+                bErrorParseFilters=true
+                bParseLog=false
             fi
         fi
         ;;
@@ -320,23 +301,23 @@ case $1 in
             
             # check if the first argument is a file
             if [ "$1" = "-g" ] && [ -f "$3" ]; then
-                bFileOpenOpt=true
-                bArgFileGroup=true
-                strFileGroup=$2
-                strFilePath=$3
+                bParseFile=true
+                bParseFileGroup=true
+                strParseFileGroup=$2
+                strParseFilePath=$3
 
             # path and filters are given
             else
                 if [ -d "${*: -1}" ]; then
 
                     #  check if the other arguments are filters
-                    if [ $bErrorPath = false ]; then
+                    if [ $bErrorParsePath = false ]; then
                         if check_filters_args "${*: -$#:$#-1}"; then
-                            bDirectoryOpenOpt=true
-                            strDirectoryPath=${*: -1}
+                            bParseDirectory=true
+                            strParseDirectoryPath=${*: -1}
                         else
-                            bErrorFilters=true
-                            bDirectoryOpenOpt=false
+                            bErrorParseFilters=true
+                            bParseDirectory=false
                         fi
                     fi
 
@@ -345,23 +326,23 @@ case $1 in
                     if [ "-a" = "${*: -2:1}" ] || [ "-b" = "${*: -2:1}" ] || [ "-g" = "${*: -2:1}" ]; then
 
                         #  check if the other arguments are filters
-                        if [ $bErrorPath = false ]; then
+                        if [ $bErrorParsePath = false ]; then
                             if check_filters_args "${*: -$#:$#}"; then
-                                bDirectoryOpenOpt=true
-                                strDirectoryPath=$PWD
+                                bParseDirectory=true
+                                strParseDirectoryPath=$PWD
                             else
-                                bErrorFilters=true
-                                bDirectoryOpenOpt=false
+                                bErrorParseFilters=true
+                                bParseDirectory=false
                             fi
                         fi
 
                 # wrong additional arguments
                     else
-                        bErrorFilters=true
-                        bDirectoryOpenOpt=false
+                        bErrorParseFilters=true
+                        bParseDirectory=false
 
                         if [ $(($# % 2)) -eq 1 ] || [ $# -gt 6 ]; then
-                            bErrorPath=true
+                            bErrorParsePath=true
                         fi
                     fi
                 fi
@@ -371,17 +352,17 @@ case $1 in
         else
             # check if path $1 is file
             if [ -f "$1" ]; then
-                bFileOpenOpt=true
-                strFilePath=$1
+                bParseFile=true
+                strParseFilePath=$1
             else 
 
                 # check if path $1 is directory
                 if [ -d "$1" ]; then
-                    bDirectoryOpenOpt=true
-                    strDirectoryPath=$1
+                    bParseDirectory=true
+                    strParseDirectoryPath=$1
                 else
-                    bDirectoryOpenOpt=true
-                    strDirectoryPath=$PWD
+                    bParseDirectory=true
+                    strParseDirectoryPath=$PWD
                 fi
             fi
         fi
@@ -390,123 +371,34 @@ case $1 in
 
 
 
-# - - - - - - - - - - - - - - #
-#     Check env variables     #
-# - - - - - - - - - - - - - - #
+# - - - - - - - - - - - - - - - #
+#      Enviroment variables     #
+# - - - - - - - - - - - - - - - #
 
-    # check if MOLE_RC is set
-    if [ -z "$MOLE_RC" ]; then
-        bErrorMoleEnv=true
-    else
-        if [ ! -f "$MOLE_RC" ]; then
-            touch "$MOLE_RC"
-        fi
+# variables
+bEnvErrorMole=false         # wrong or non existing mole environment
+strEnvEditor=""             # system editor, default is vim
+
+
+# check if MOLE_RC is set
+if [ -z "$MOLE_RC" ]; then
+    bEnvErrorMole=true
+else
+    if [ ! -f "$MOLE_RC" ]; then
+        touch "$MOLE_RC"
     fi
-
-    # check if EDITOR or VISUAL is set
-    if [ -n "$EDITOR" ]; then
-        strEditor="$EDITOR"
-    else
-        if [ -n "$VISUAL" ]; then
-            strEditor="$VISUAL"
-        else
-            strEditor="vi"
-        fi
-    fi
-
-
-
-# - - - - - - - - - - - - - - - - - #
-#      Open a specific file [1]     #
-# - - - - - - - - - - - - - - - - - #
-
-if [ $bFileOpenOpt = true ] && [ $bErrorMoleEnv = false ]; then
-    
-    # write to the first line of the file mole_rc accessed through $MOLE_RC
-    #echo "## $strFilePath" > $MOLE_RC
-    
-    # variables
-    iNum=1                              # line number
-    strLine=""                          # the string of theline
-    strRewriteOpt=""                    # the option argument ( #[0-9]* )
-    strRewritePath=""                   # the path argument
-    iRewriteOpenNum=0                   # the number of times the file was opened
-    strRewriteDate=$(date +%Y-%m-%d)    # the date of the last time the file was opened
-    strRewriteTime=$(date +%H-%M-%S)    # the time of the last time the file was opened
-    strRewriteGroups=""                 # the groups of the file
-
-    bRewriteAction=false                # bool value which file was opened the last time
-    bRewriteData=false                  # bool value which indicates adding or rewriting the line
-
-
-    # going through the file and rewriting the log
-    while read -r strLine; do
-
-        # get the option argument and the path argument
-        strRewriteOpt=$(echo "$strLine" | awk '{print $1}')
-        strRewritePath=$(echo "$strLine" | awk '{print $2}')
-
-
-        #file option [#0]
-        # geting the directories of the strFilePath and the strRewritePath
-        strRewriteDir1=$(echo "$strFilePath" | sed 's/\/[^\/]*$//')
-        strRewriteDir2=$(echo "$strRewritePath" | sed 's/\/[^\/]*$//')
-
-        # compare the directory of the strFilePath with the directory of the strRewritePath
-        if [ "$strRewriteOpt" = "#0" ] && [ "$strRewriteDir1" = "$strRewriteDir2" ]; then
-            # set bRewriteData to true
-            bRewriteAction=true
-
-            # Replace the #0 line with the new updated path
-            strRewrite="#0 $strFilePath"
-            awk -v line="$strRewrite" -v num="$($iNum)" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
-        fi
-
-
-        # file option [#1]
-        if [ "$strRewriteOpt" = "#1" ] && [ "$strRewritePath" = "$strFilePath" ]; then
-            # set bRewriteData to true
-            bRewriteData=true
-
-            # increase the number of times the file was opened
-            iRewriteOpenNum=$(echo "$strLine" | awk '{print $3}')
-            iRewriteOpenNum=$($iRewriteOpenNum + 1)
-
-            # rewriting the groups
-            strRewriteGroups=$(echo "$strLine" | cut -d ' ' -f 6-)
-            if [ $bArgFileGroup = true ]; then
-                if ! (echo " $strRewriteGroups " | grep -q " $strFileGroup "); then
-                    strRewriteGroups="$strFileGroup ${strRewriteGroups}"
-                fi
-            fi 
-
-            # create and replace the line
-            strRewrite="#1 $strFilePath $iRewriteOpenNum $strRewriteDate $strRewriteTime $strRewriteGroups"
-            awk -v line="$strRewrite" -v num="$($iNum)" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
-        fi   
-
-        # increase the line number
-        iNum=$((iNum+1))
-    done < "$MOLE_RC"
-
-
-    # if the #0 tag does not exist
-    if [ $bRewriteAction = false ]; then
-        echo "#0 $strFilePath" >> "$MOLE_RC"
-    fi
-
-
-    # if the file is not in the log creating a new entry
-    if [ $bRewriteData = false ]; then
-        echo "#1 $strFilePath 1 $strRewriteDate $strRewriteTime $strFileGroup" >> "$MOLE_RC"
-    fi
-
-    # open the file
-    #$strEditor $strFilePath
 fi
 
-
-
+# check if EDITOR or VISUAL is set
+if [ -n "$EDITOR" ]; then
+    strEnvEditor="$EDITOR"
+else
+    if [ -n "$VISUAL" ]; then
+        strEnvEditor="$VISUAL"
+    else
+        strEnvEditor="vi"
+    fi
+fi
 
 
 
@@ -514,21 +406,29 @@ fi
 #      Open file through directory [2]      #
 # - - - - - - - - - - - - - - - - - - - - - #
 
-if [ $bDirectoryOpenOpt = true ]; then
-
     # variables
-    strSearchFiles=""
-    strSearchFile=""
-    strSearchCheckLine=""
+    strSearchFiles=""                   # list of files in directory
+    strSearchFile=""                    # current file, which is being checked
+    strSearchCheckLine=""               # current line string, which is being checked
     strSearchFilters=""
-    strSearchDate=$(date -d 0000-00-00 + %s)
+    strSearchDate="0000-01-01"
+    strSearchTime="00:00:00"
     strSearchOutputFilePath=""
 
+    # counters
     iSearchFileCount=0
     iSearchOpenNum=0
 
+    # 
     bSearchDirectoryFound=false
     bSearchManyFiles=false
+    bSearchFilterAccepted=false
+
+
+# open file through directory
+if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
+
+    bSearchFilterAccepted=false
 
     # check if we have any record of the directory in molerc
     while read -r strLine; do
@@ -539,7 +439,7 @@ if [ $bDirectoryOpenOpt = true ]; then
         strSearchDir=$(echo "$strSearchPath" | sed 's/\/[^\/]*$//')
 
         # check if the directory is in the log
-        if [ "$strRewriteOpt" = "#0" ] && [ "$strSearchDir" = "$strDirectoryPath" ]; then
+        if [ "$strRewriteOpt" = "#0" ] && [ "$strSearchDir" = "$strParseDirectoryPath" ]; then
             bSearchDirectoryFound=true
         fi
     done < "$MOLE_RC"
@@ -554,13 +454,13 @@ if [ $bDirectoryOpenOpt = true ]; then
     if [ $bSearchDirectoryFound = false ]; then
         
         # get the file names from directory and put them in a string
-        strSearchFiles=$(ls $strDirectoryPath)
-        strSearchFiles=$(echo $strSearchFiles | tr '\n' ' ')
+        strSearchFiles=$(ls "$strParseDirectoryPath")
+        strSearchFiles=$(echo "$strSearchFiles" | tr '\n' ' ')
 
         # get the number of strings from the string and check if there are more than one file
-        iDirectoryFilesNum=$(echo $strSearchFiles | wc -w)
+        iDirectoryFilesNum=$(echo "$strSearchFiles" | wc -w)
         
-        if [ $iDirectoryFilesNum -gt 1 ]; then
+        if [ "$iDirectoryFilesNum" -gt 1 ]; then
             bSearchManyFiles=true
         fi
 
@@ -568,91 +468,117 @@ if [ $bDirectoryOpenOpt = true ]; then
         if [ $bSearchManyFiles = true ]; then
 
             # searching for the right directory
-            for (( i=1; i<=$iDirectoryFilesNum; i++ )); do
+            for (( i=1; i<="$iDirectoryFilesNum"; i++ )); do
+
+                # setting up filter
+                bSearchFilterAccepted=true
 
                 # creating the path to the file
-                strSearchFile=$(echo $strSearchFiles | cut -d ' ' -f $i)
-                strSearchFile="$strDirectoryPath/$strSearchFile"
-                echo "- $strSearchFile"
+                strSearchFile=$(echo "$strSearchFiles" | cut -d ' ' -f $i)
+                strSearchFile="$strParseDirectoryPath/$strSearchFile"
 
                 # get line from file molerc which first argument is "#1" and second argument is $strSearchFile]
-                strSearchCheckLine=$(grep -E "^#1 $strSearchFile" $MOLE_RC)
-                echo "- file line = $strSearchCheckLine"
-
-                # no filters
-                if [ $bFilterGroup = false ] && [ $bFilterDateAfter = false ] && [ $bFilterDateBefore = false ]; then
-                    
-                    # save the args for checking the optimal file
-                    echo $(echo "$strSearchCheckLine" | cut -d ' ' -f 3)
-                    strSearchDate=$(echo "$strSearchCheckLine" | cut -d ' ' -f 4)
-                    strSearchTime=$(echo "$strSearchCheckLine" | cut -d ' ' -f 5)
-                    
-                    # depening on [m] argument save the file path if it is the most opened file
-                    if [ $bArgMostOften = true ]; then
-                        if [ $(echo "$strSearchCheckLine" | cut -d ' ' -f 3) -gt $iSearchOpenNum ]; then
-                            iSearchOpenNun=$(echo "$strSearchCheckLine" | cut -d ' ' -f 3)
-                            strSearchOutputFilePath=$strSearchFile
-                        fi
-
-                    # save the file path which was the last opened
-                    else
-                        if [ $(date -d "$(echo "$strSearchCheckLine" | cut -d ' ' -f 4)" + "$(echo "$strSearchCheckLine" | cut -d ' ' -f 5))" -gt $strSearchDate ]; then
-                            strSearchDate=$(date -d $(echo "$strSearchCheckLine" | cut -d ' ' -f 4) + $(echo "$strSearchCheckLine" | cut -d ' ' -f 5))
-                            strSearchOutputFilePath=$strSearchFile
-                        fi
-                    fi
-
-                    echo "- date = $strSearchDate"
-                    echo "- open num = $strSearchOpenNum"
-
-                fi
+                strSearchCheckLine=$(grep -E "^#1 $strSearchFile" "$MOLE_RC")
 
                 # filter by group
-                if [ $bFilterGroup = true ]; then
+                if [ $bFilterGroup = true ] && [ $bSearchFilterAccepted = true ]; then
                     # get the groups from the line
                     strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 6-)
 
                     # the file is in one of the groups
                     if echo " $strSearchFilters " | grep -q " $strFilterGroup "; then
-                        echo "groups = $strSearchFilters"
+                        bSearchFilterAccepted=true;
                     
                     # the file is not in any of the groups did not pass the filter
                     else
-                        echo "no groups"
+                        bSearchFilterAccepted=false;
                     fi
                 fi
 
                 # filter by date after
-                if [ $bFilterDateAfter = true ]; then
+                if [ $bFilterDateAfter = true ] && [ $bSearchFilterAccepted = true ]; then
                     # get the date from the line
                     strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 4)
 
                     # the date is after the filter date
                     if [ "$(date -d "$strSearchFilters" +%s)" -gt "$(date -d "$strFilterDateAfter" +%s)" ]; then
-                        echo "- date = $strSearchFilters"
-                        echo "- filter date = $strFilterDateAfter"
+                        bSearchFilterAccepted=true;
 
                     # the date is not after the filter date did not pass the filter
                     else
-                        echo "- invalid date"
+                        bSearchFilterAccepted=false;
                     fi
                 fi
 
                 # filter by date before
-                if [ $bFilterDateBefore = true ]; then
+                if [ $bFilterDateBefore = true ] && [ $bSearchFilterAccepted = true ]; then
                     # get the date from the line
                     strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 4)
 
                     # the date is before the filter date
                     if [ "$(date -d "$strSearchFilters" +%s)" -lt "$(date -d "$strFilterDateBefore" +%s)" ]; then
-                        echo "- date = $strSearchFilters"
-                        echo "- filter date = $strFilterDateBefore"
+                        bSearchFilterAccepted=true;
                     
                     # the date is not before the filter date did not pass the filter
                     else
-                        echo "- invalid date"
+                        bSearchFilterAccepted=false;
                     fi
                 fi
+
+                # no filters
+                if [ $bSearchFilterAccepted = true ]; then
+                    
+                    # depening on [m] argument save the file path if it is the most opened file
+                    if [ $bParseDirectoryMost = true ]; then
+                        
+                        # find the file which was opened the most
+                        iTmp="$(echo "$strSearchCheckLine" | cut -d ' ' -f 3)"
+                        if [ "$iTmp" -gt $iSearchOpenNum ]; then
+                            
+                            # save the data for repeating the check
+                            iSearchOpenNum=$(echo "$strSearchCheckLine" | cut -d ' ' -f 3)
+                            
+                            # set the option to open the file
+                            bParseFile=true
+                            strParseFilePath=$strSearchFile
+                        fi
+
+                    # save the file path which was the last opened
+                    else
+                        # convert the date and time
+                        strTmp1=$(echo "$strSearchCheckLine" | cut -d ' ' -f 4)
+                        strTmp2=$(echo "$strSearchCheckLine" | cut -d ' ' -f 5)
+
+                        # the dates are the same have to check the time
+                        if date -d "$strTmp1" >/dev/null 2>&1 && date -d "$strSearchDate" >/dev/null 2>&1 && [ "$(date -d "$strTmp1" +%s)" -eq "$(date -d "$strSearchDate" +%s)" ]; then
+
+                            # compare the times
+                            if [ "$(date -d "$strTmp2" +%s)" -gt "$(date -d "$strSearchTime" +%s)" ]; then
+                                # save data for repeating the check
+                                strSearchDate=$strTmp1
+                                strSearchTime=$strTmp2
+                                
+                                # set the option to open the file
+                                bParseFile=true
+                                strParseFilePath=$strSearchFile
+                            fi
+
+                        # the dates are not the same
+                        else
+                            # the date is after the saved date
+                            if date -d "$strTmp1" >/dev/null 2>&1 && date -d "$strSearchDate" >/dev/null 2>&1 && [ "$(date -d "$strTmp1" +%s)" -gt "$(date -d "$strSearchDate" +%s)" ]; then
+                                # save data for repeating the check
+                                strSearchDate=$strTmp1
+                                strSearchTime=$strTmp2
+                                
+                                # set the option to open the file
+                                bParseFile=true
+                                strParseFilePath=$strSearchFile
+                            fi
+                        fi
+                    fi
+                fi
+
             done
         
 
@@ -660,7 +586,7 @@ if [ $bDirectoryOpenOpt = true ]; then
         else
             # creating the path to the file
             strSearchFile="$strSearchFiles"
-            strSearchFile="$strDirectoryPath/$strSearchFile"
+            strSearchFile="$strParseDirectoryPath/$strSearchFile"
 
             # checking filters
             if [ $bFilterGroup = true ] || [ $bFilterDateAfter = true ] || [ $bFilterDateBefore = true ]; then
@@ -676,11 +602,12 @@ if [ $bDirectoryOpenOpt = true ]; then
 
                     # the file is in one of the groups
                     if echo " $strSearchFilters " | grep -q " $strFilterGroup "; then
-                        echo "groups = $strSearchFilters"
+                        bParseFile=true
+                        strParseFilePath=$strSearchFile
                     
                     # the file is not in any of the groups did not pass the filter
                     else
-                        echo "no groups"
+                        echo "- no groups"
                     fi
                 fi
 
@@ -691,8 +618,8 @@ if [ $bDirectoryOpenOpt = true ]; then
 
                     # the date is after the filter date
                     if [ "$(date -d "$strSearchFilters" +%s)" -gt "$(date -d "$strFilterDateAfter" +%s)" ]; then
-                        echo "- date = $strSearchFilters"
-                        echo "- filter date = $strFilterDateAfter"
+                        bParseFile=true
+                        strParseFilePath=$strSearchFile
 
                     # the date is not after the filter date did not pass the filter
                     else
@@ -706,18 +633,115 @@ if [ $bDirectoryOpenOpt = true ]; then
 
                     # the date is before the filter date
                     if [ "$(date -d "$strSearchFilters" +%s)" -lt "$(date -d "$strFilterDateBefore" +%s)" ]; then
-                        echo "- date = $strSearchFilters"
-                        echo "- filter date = $strFilterDateBefore"
+                        bParseFile=true
+                        strParseFilePath=$strSearchFile
                     
                     # the date is not before the filter date did not pass the filter
                     else
                         echo "- invalid date"
                     fi
                 fi    
+            
+            # open the file
+            else
+                bParseFile=true
+                strParseFilePath=$strSearchFile
             fi
             
         fi
     fi
+fi
+
+
+
+
+# - - - - - - - - - - - - - - - - - #
+#      Open a specific file [1]     #
+# - - - - - - - - - - - - - - - - - #
+
+if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
+    
+    # write to the first line of the file mole_rc accessed through $MOLE_RC
+    #echo "## $strParseFilePath" > $MOLE_RC
+    
+    # variables
+    iNum=1                              # line number
+    strLine=""                          # the string of theline
+    strRewriteOpt=""                    # the option argument ( #[0-9]* )
+    strRewritePath=""                   # the path argument
+    iRewriteOpenNum=0                   # the number of times the file was opened
+    strRewriteDate=$(date +%Y-%m-%d)    # the date of the last time the file was opened
+    strRewriteTime=$(date +%H:%M:%S)    # the time of the last time the file was opened
+    strRewriteGroups=""                 # the groups of the file
+
+    bRewriteAction=false                # bool value which file was opened the last time
+    bRewriteData=false                  # bool value which indicates adding or rewriting the line
+
+
+    # going through the file and rewriting the log
+    while read -r strLine; do
+
+        # get the option argument and the path argument
+        strRewriteOpt=$(echo "$strLine" | awk '{print $1}')
+        strRewritePath=$(echo "$strLine" | awk '{print $2}')
+
+
+        #file option [#0]
+        # geting the directories of the strParseFilePath and the strRewritePath
+        strRewriteDir1=$(echo "$strParseFilePath" | sed 's/\/[^\/]*$//')
+        strRewriteDir2=$(echo "$strRewritePath" | sed 's/\/[^\/]*$//')
+
+        # compare the directory of the strParseFilePath with the directory of the strRewritePath
+        if [ "$strRewriteOpt" = "#0" ] && [ "$strRewriteDir1" = "$strRewriteDir2" ]; then
+            # set bRewriteData to true
+            bRewriteAction=true
+
+            # Replace the #0 line with the new updated path
+            strRewrite="#0 $strParseFilePath"
+            awk -v line="$strRewrite" -v num="$iNum" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
+        fi
+
+
+        # file option [#1]
+        if [ "$strRewriteOpt" = "#1" ] && [ "$strRewritePath" = "$strParseFilePath" ]; then
+            # set bRewriteData to true
+            bRewriteData=true
+
+            # increase the number of times the file was opened
+            iRewriteOpenNum=$(echo "$strLine" | awk '{print $3}')
+            iRewriteOpenNum=$((iRewriteOpenNum + 1))
+
+            # rewriting the groups
+            strRewriteGroups=$(echo "$strLine" | cut -d ' ' -f 6-)
+            if [ $bParseFileGroup = true ]; then
+                if ! (echo " $strRewriteGroups " | grep -q " $strParseFileGroup "); then
+                    strRewriteGroups="$strParseFileGroup ${strRewriteGroups}"
+                fi
+            fi 
+
+            # create and replace the line iNum with the new data
+            strRewrite="#1 $strParseFilePath $iRewriteOpenNum $strRewriteDate $strRewriteTime $strRewriteGroups"
+            awk -v line="$strRewrite" -v num="$iNum" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
+        fi   
+
+        # increase the line number
+        iNum=$((iNum+1))
+    done < "$MOLE_RC"
+
+
+    # if the #0 tag does not exist
+    if [ $bRewriteAction = false ]; then
+        echo "#0 $strParseFilePath" >> "$MOLE_RC"
+    fi
+
+
+    # if the file is not in the log creating a new entry
+    if [ $bRewriteData = false ]; then
+        echo "#1 $strParseFilePath 1 $strRewriteDate $strRewriteTime $strParseFileGroup" >> "$MOLE_RC"
+    fi
+
+    # open the file
+    #$strEnvEditor $strParseFilePath
 fi
 
 
@@ -728,22 +752,22 @@ fi
 # - - - - - - - - - - - - - #
 
     # [1] 
-    if [ $bHelpOpt = true ]; then
+    if [ $bParseHelp = true ]; then
         echo "bHelpArg = true  [ ./mole $* ]"
     fi
 
     # [2]
-    if [ $bFileOpenOpt = true ]; then
+    if [ $bParseFile = true ]; then
 
         # main
         # printing the option
-        echo "bFileOpenOpt = true  [ ./mole $* ]"
-        echo "strFilePath = $strFilePath"
+        echo "bParseFile = true  [ ./mole $* ]"
+        echo "strParseFilePath = $strParseFilePath"
 
         # group
         # printing the group
-        if [ $bArgFileGroup = true ]; then
-            echo "strFileGroup = $strFileGroup"
+        if [ $bParseFileGroup = true ]; then
+            echo "strParseFileGroup = $strParseFileGroup"
         fi 
 
         # Reading file $MOLE_RC
@@ -758,16 +782,16 @@ fi
     fi
 
     # [3]
-    if [ $bDirectoryOpenOpt = true ]; then
+    if [ $bParseDirectory = true ]; then
 
         # main
         # printing the option
-        echo "bDirectoryOpenOpt = true  [ ./mole $* ]"
-        echo "strDirectoryPath = $strDirectoryPath"
+        echo "bParseDirectory = true  [ ./mole $* ]"
+        echo "strParseDirectoryPath = $strParseDirectoryPath"
 
         # most often argument
-        if [ $bArgMostOften = true ]; then
-            echo "bArgMostOften = true"
+        if [ $bParseDirectoryMost = true ]; then
+            echo "bParseDirectoryMost = true"
         fi
 
         # filters
@@ -790,12 +814,12 @@ fi
     fi
 
     # [4]
-    if [ $bListOpt = true ]; then
+    if [ $bParseList = true ]; then
 
         # main
         # printing the option
-        echo "bListOpt = true  [ ./mole $* ]"
-        echo "strDirectoryPath = $strDirectoryPath"
+        echo "bParseList = true  [ ./mole $* ]"
+        echo "strParseDirectoryPath = $strParseDirectoryPath"
 
         # filters
         # printing the group filter
@@ -816,11 +840,11 @@ fi
     fi
 
     # [5]
-    if [ $bSecretLogOpt = true ]; then
+    if [ $bParseLog = true ]; then
         # main
         # printing the option
-        echo "bSecretLogOpt = true  [ ./mole $* ]"
-        echo "strDirectoryPath = $strDirectoryPath"
+        echo "bParseLog = true  [ ./mole $* ]"
+        echo "strParseDirectoryPath = $strParseDirectoryPath"
 
         # filters
         # printing the date after filter
@@ -844,23 +868,27 @@ fi
 #       Error Printing        #
 # - - - - - - - - - - - - - - #
 
-    if [ $bErrorOpt = true ]; then
-        echo "bSecretLogOpt = true  [ ./mole $* ]"
+    if [ $bErrorParseFilters = true ] && [ $bErrorParsePath = true ]; then
+        echo "[ ./mole $* ]"
         echo "[error] - wrong use-case"
     fi
 
-    if [ $bErrorArgNum = true ]; then
+    if [ $bErrorParseArgNum = true ]; then
+        echo "[ ./mole $* ]"
         echo "[error] - wrong number of arguments"
     fi
 
-    if [ $bErrorPath = true ]; then
+    if [ $bErrorParsePath = true ]; then
+        echo "[ ./mole $* ]"
         echo "[error] - wrong path"
     fi
 
-    if [ $bErrorFilters = true ]; then
+    if [ $bErrorParseFilters = true ]; then
+        echo "[ ./mole $* ]"
         echo "[error] - wrong filters"
     fi
 
-    if [ $bErrorMoleEnv = true ]; then
+    if [ $bEnvErrorMole = true ]; then
+        echo "[ ./mole $* ]"
         echo "[error] - MOLE_RC is not set"
     fi
