@@ -433,6 +433,11 @@ else
     fi
 fi
 
+# check if the secret-log directory exists
+if [ ! -d "$HOME/.mole" ]; then
+    mkdir -p "$HOME/.mole"
+fi
+
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - #
@@ -639,7 +644,7 @@ fi
 #      Open a specific file [3]     #
 # - - - - - - - - - - - - - - - - - #
 
-# molerc file variables
+# molerc write/rewrite file variables
 strOpenRewriteData=false            # bool value which indicates adding or rewriting line
 strOpenLine=""                      # the string of the line\n from the molerc file
 strOpenNewLine=""                   # new line which will replace or be added to the molerc file
@@ -648,6 +653,17 @@ iOpenNewNum=0                       # [2] arg -> the new number of times the fil
 strOpenNewDate=$(date +%Y-%m-%d)    # [3] arg -> the date of the last time the file was opened
 strOpenNewTime=$(date +%H:%M:%S)    # [4] arg -> the time of the last time the file was opened
 strOpenNewGroups=""                 # [5] arg -> the groups of the file
+strOpenLineWrite=""                 # the string of the line which will be written to the molerc file
+strOpenOldLine=""                   # old already read line from the molerc file
+
+# molerc file secret log variables
+bOpenLogNewFile=false               # bool value which indicates if the secret log file is new
+bOpenLog=false                      # bool value which if it is reading secret log information
+strOpenLogPath1=""                  # first var used for checking if the file is already in the log
+strOpenLogPath2=""                  # second var used for checking if the file is already in the log
+strOpenLogNewLine=""                  # new line which will be added to the secret log file
+strOpenLogOldLine=""                # old already read line from the molerc file
+
 
 if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
     
@@ -691,17 +707,76 @@ if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
         iTmp=$((iTmp+1))
     done < "$MOLE_RC"
 
-    # [3.2] - Adding a new line to the molerc file
-    # if the file is not in the log creating a new entry
+
+    # [3.2] - Adding a new line to the molerc file, if the file is not in the log creating a new entry
     if [ $strOpenRewriteData = false ]; then
-        echo "$strParseFilePath 1 $strOpenNewDate $strOpenNewTime $strParseFileGroup" >> "$MOLE_RC"
+        
+        # check if file is empty
+        if [ ! -s "$MOLE_RC" ]; then
+            # add new line to empty file
+            echo "$strParseFilePath 1 $strOpenNewDate $strOpenNewTime $strParseFileGroup" >> "$MOLE_RC"
+            bOpenLogNewFile=true
+
+        # file is not empty
+        else
+            # get the first line of the file
+            strOpenOldLine=$(head -n 1 "$MOLE_RC")
+            strOpenNewLine="$strParseFilePath 1 $strOpenNewDate $strOpenNewTime $strParseFileGroup\n$strOpenOldLine"
+
+            # replace the first line with the new line
+            awk -v line="$strOpenNewLine" -v num="1" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
+        fi
     fi
 
-    # [3.3] - Create open file log
-    echo "# $strParseFilePath $strOpenNewDate $strOpenNewTime" >> "$MOLE_RC"
 
-    # [3.5] opening the file
-    #$strEnvEditor $strParseFilePath
+    # [3.3] - Write log-data to the molerc file
+    if [ $bOpenLogNewFile = true ]; then
+        
+        # just write the entry
+        echo "# $strParseFilePath $strOpenNewDate $strOpenNewTime" >> "$MOLE_RC"
+    
+    # has to write the entry at tppropriate line
+    else
+
+        # new line which will be added to log
+        strOpenLogNewLine="# $strParseFilePath $strOpenNewDate $strOpenNewTime"
+
+        iTmp=1  # for cycle and file-line number
+    
+        # going through the file and adding new log
+        while read -r strOpenLine; do
+
+            # check if it is in the log part
+            if [ "$(echo "$strOpenLine" | awk '{print $1}')" = "#" ]; then
+
+                # get the path arguments
+                strOpenLogPath1=$strOpenLogPath2
+                strOpenLogPath2=$(echo "$strOpenLine" | awk '{print $2}')
+
+                # given path is lexicographically first or in the the middle of the log
+                if [[ "$strOpenLogPath1" < "$strParseFilePath" ]] || [[ "$strOpenLogPath1" == "$strParseFilePath" ]]; then 
+                    if [[ $strParseFilePath < $strOpenLogPath2 ]]; then
+                        
+                        # insert the new line above the current line
+                        awk -v line="$strOpenLogNewLine\n$strOpenLine" -v num="$iTmp" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
+                        bOpenLog=true
+
+                    fi
+                fi
+            fi
+
+            iTmp=$((iTmp+1))
+        done < "$MOLE_RC"
+
+        # write at the end of the file
+        if [ $bOpenLog = false ]; then
+            echo "# $strParseFilePath $strOpenNewDate $strOpenNewTime" >> "$MOLE_RC"
+        fi
+    fi
+
+
+    # [3.4] opening the file
+    $strEnvEditor $strParseFilePath
 fi
 
 
@@ -859,11 +934,122 @@ if [ $bParseList = true ] && [ $bEnvErrorMole = false ]; then
 
 fi
 
-# - - - - - - - - - - - - - - - - #
-#      List opened files [5]      #
-# - - - - - - - - - - - - - - - - #
 
-# print log
+
+# - - - - - - - - - - - - - - - - - #
+#      Generate secret log [5]      #
+# - - - - - - - - - - - - - - - - - #
+
+# log enviroment variables
+strSecretLogPath=""
+strSecretMolercLine=""
+strSecretDirPath=""
+strSecretOldDirPath=""
+strSecretDate=""
+strSecretTime=""
+bSecretDirectory=false
+bSecretDirectoryAccepted=false
+bSecretLogAccepted=false
+
+# [ 5.1 ] - create the secret log file
+if [ $bParseLog = true ]; then
+
+    # [ 5.1 ] - create the secret log file
+    strSecretLogPath=$(printf "%s/.mole/log_%s_%s" "$HOME" "$USER" "$(date +%Y-%m-%d-%H-%M-%S)")
+    
+
+    # [ 5.2 ] - add the logs to the secret log file
+    
+    # make parseDircectoryPath better format
+    if [ "$strParseDirectoryPath" != "//secret-log//" ]; then
+        bSecretDirectory=true
+
+        # replace every ',' in directory path with space
+        strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/,/ /g')
+    fi 
+    
+    # read the molerc to get the information which is needed to generate the secret log
+    while read -r strSecretMolercLine; do
+        if [ "$(echo "$strSecretMolercLine" | awk '{print $1}')" = "#" ]; then 
+            
+            # get the directory path
+            strSecretDirPath=$(echo "$strSecretMolercLine" | awk '{print $2}')
+
+            # assuming that the directory is accepted
+            bSecretDirectoryAccepted=true
+
+            # checking if the directory is accepted by the filter
+            if [[ "$bSecretDirectory" = true ]] && [[ " $strParseDirectoryPath " == *" $strSecretDirPath "* ]]; then
+                bSecretDirectoryAccepted=false
+            fi
+            
+            # [5.3] - filter by directory
+            # if the directory is not substring of the parse directory path continue
+            if [ "$bSecretDirectoryAccepted" = true ]; then
+
+                # assuming that the log in molerc is accepted by the filters
+                bSecretLogAccepted=true
+
+                # get the date and time from the line and fix the time format
+                strSecretDate=$(echo "$strSecretMolercLine" | awk '{print $3}')
+                strSecretTime=$(echo "$strSecretMolercLine" | awk '{print $4}')
+                strSecretTime=$(echo "$strSecretTime" | sed 's/:/-/g')
+
+
+                # [5.4] - filters
+                # filter by date after
+                if [ $bFilterDateAfter = true ] && [ $bSecretLogAccepted = true ]; then
+
+                    # the date is after the filter date
+                    if [ "$(date -d "$strSecretDate" +%s)" -gt "$(date -d "$strFilterDateAfter" +%s)" ]; then
+                        bSecretLogAccepted=true;
+                    # the date is not after the filter date did not pass the filter
+                    else
+                        bSecretLogAccepted=false;
+                    fi
+                fi
+
+                # filter by date before
+                if [ $bFilterDateBefore = true ] && [ $bSecretLogAccepted = true ]; then
+
+                    # the date is before the filter date
+                    if [ "$(date -d "$strSecretDate" +%s)" -lt "$(date -d "$strFilterDateBefore" +%s)" ]; then
+                        bSecretLogAccepted=true;
+
+                    # the date is not before the filter date did not pass the filter
+                    else
+                        bSecretLogAccepted=false;
+                    fi
+                fi                
+
+                # [5.5] - printing to the secret log
+                if [ $bSecretLogAccepted = true ] && [ "$strSecretDirPath" != "$strSecretOldDirPath" ]; then
+                    
+                    # printing the directory path
+                    if [ -z "$strSecretOldDirPath" ]; then
+                        printf "%s;%s_%s" "$strSecretDirPath" "$strSecretDate" "$strSecretTime" >> "$strSecretLogPath"
+                    else
+                        printf "\n%s;%s_%s" "$strSecretDirPath" "$strSecretDate" "$strSecretTime" >> "$strSecretLogPath"
+                    fi
+
+                # printing just the date and time
+                else    
+                    printf ";%s_%s" "$strSecretDate" "$strSecretTime" >> "$strSecretLogPath"
+                fi
+            fi
+
+            # save the old directory path
+            strSecretOldDirPath="$strSecretDirPath"
+        fi 
+    done < "$MOLE_RC"
+
+
+    # [ 5.3 ] - zip the secret log file with bz2
+    #bzip2 "$strSecretLogPath"
+    
+fi
+
+
 
 
 
@@ -1060,7 +1246,6 @@ fi
         # main
         # printing the option
         echo "[Print Secret Log]"
-        echo "- bParseLog = true"
         echo "- strParseDirectoryPath = $strParseDirectoryPath"
 
         # filters
