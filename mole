@@ -208,7 +208,7 @@ case $1 in
         # directory path is given
         if [ -d "${*: -1}" ]; then
             bParseList=true
-            strParseDirectoryPath=${*: -1}
+            strParseDirectoryPath="$PWD/${*: -1}"
             
             #  check if the other arguments are filters
                 if [ $bErrorParsePath = false ] && [ $# -ne 2 ]; then
@@ -391,8 +391,8 @@ if [ $bParseFile = true ]; then
         strParseFilePath=$(echo "$strParseFilePath" | sed 's/^[^ ]* //')
     fi
 fi
-# - directory
-if [ $bParseDirectory = true ]; then
+# - directory, list
+if [ $bParseDirectory = true ] || [ $bParseList = true ]; then
     # remove n number of "/" from the end of the path
     strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/\/\{1,\}$//')
 
@@ -518,18 +518,30 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
             # [2.4] - checking if the file is accepted by the filters
             # filter by group
             if [ $bFilterGroup = true ] && [ $bSearchFileAccepted = true ]; then
+                
                 # get the groups from the line
                 strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 5-)
                 
-                # the file is in one of the groups
-                if echo " $strSearchFilters " | grep -q " $strFilterGroup "; then
-                    bSearchFileAccepted=true;
-                
-                # the file is not in any of the groups did not pass the filter
-                else
-                    bSearchFileAccepted=false;
-                fi
+                # replace ',' with space in strFilterGroup
+                strFilterGroup=$(echo "$strFilterGroup" | sed 's/,/ /g')
+
+                # get the number of strings from the string -> used for the for loop
+                iTmp2=$(echo "$strFilterGroup" | wc -w)
+
+                #  for every string devided by space in strFilterGroup check if it has substring in strSearchFilters
+                for (( j=1; j<="$iTmp2"; j++ )); do
+                    strTmp=$(echo "$strFilterGroup" | cut -d ' ' -f $j)
+
+                    # if the string is in the line, the file is accepted
+                    if [[ " $strSearchFilters " == *" $strTmp "* ]]; then
+                        bSearchFileAccepted=true;
+                        break;
+                    else
+                        bSearchFileAccepted=false;
+                    fi
+                done
             fi
+
             # filter by date after
             if [ $bFilterDateAfter = true ] && [ $bSearchFileAccepted = true ]; then
                 # get the date from the line
@@ -685,9 +697,173 @@ if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
         echo "$strParseFilePath 1 $strOpenNewDate $strOpenNewTime $strParseFileGroup" >> "$MOLE_RC"
     fi
 
-    # [3.3] opening the file
+    # [3.3] - Create open file log
+    echo "# $strParseFilePath $strOpenNewDate $strOpenNewTime" >> "$MOLE_RC"
+
+    # [3.5] opening the file
     #$strEnvEditor $strParseFilePath
 fi
+
+
+
+# - - - - - - - - - - - - - - - - #
+#      List opened files [4]      #
+# - - - - - - - - - - - - - - - - #
+
+# variables for the list search
+strListLine=""              # line from the molerc file
+strListFiles=""             # string of the files from the directory
+strListFileCheck=""         # file from the directory which is checked
+strListDirectoryCheck=""    # path of the file which is checked
+iListCharNum=0              # the biggest number of characters in the file name
+
+# variables for the list search filtering
+bListLogAccepted=false      # bool value which indicates if the line from the molerc file is accepted
+
+# variables for the list output
+strListLine=""            # line from the molerc file
+strListPath=""            # path of the name file
+strListFile=""            # name of the file
+strListGroups=""          # groups of the file
+iListIndentNum=0          # number spaces for the indent
+
+# print file from file molerc in in for cycle line by line
+if [ $bParseList = true ] && [ $bEnvErrorMole = false ]; then
+    
+    # [4.1] - Getting the files from the directory and filename data
+    while read -r strListLine; do
+        
+        # getting the file name
+        strTmp=$(echo "$strListLine" | awk '{print $1}')
+        strListFileCheck=$(echo "$strTmp" | awk -F'/' '{print $NF}')
+
+        # get the rest of the path
+        strListDirectoryCheck=$(echo "$strTmp" | sed "s/$strListFileCheck//g")
+        strListDirectoryCheck=$(echo "$strListDirectoryCheck" | sed 's/.$//')
+
+        # get the number characters in the file name and save the biggest number
+        iTmp=${#strListFileCheck}
+        if [ $iTmp -gt $iListCharNum ]; then
+            iListCharNum=$iTmp
+        fi
+
+        # save the file if the molerc directory is the same as the directory from the strParseDirectoryPath
+        if [ "$strListDirectoryCheck" = "$strParseDirectoryPath" ]; then
+            
+            # [4.2] - Checking if the file is accepted by the filters
+            bListLogAccepted=true
+
+            # filter by group
+            if [ $bFilterGroup = true ] && [ $bListLogAccepted = true ]; then
+                
+                # get the groups from the line
+                strSearchFilters=$(echo "$strListLine" | cut -d ' ' -f 5-)
+                
+                # replace ',' with space in strFilterGroup
+                strFilterGroup=$(echo "$strFilterGroup" | sed 's/,/ /g')
+
+                # get the number of strings from the string -> used for the for loop
+                iTmp2=$(echo "$strFilterGroup" | wc -w)
+
+                #  for every string devided by space in strFilterGroup check if it has substring in strSearchFilters
+                for (( j=1; j<="$iTmp2"; j++ )); do
+                    strTmp=$(echo "$strFilterGroup" | cut -d ' ' -f $j)
+
+                    # if the string is in the line, the file is accepted
+                    if [[ " $strSearchFilters " == *" $strTmp "* ]]; then
+                        bListLogAccepted=true;
+                        break;
+                    else
+                        bListLogAccepted=false;
+                    fi
+                done
+            fi
+
+            # filter by date after
+            if [ $bFilterDateAfter = true ] && [ $bListLogAccepted = true ]; then
+                # get the date from the line
+                strSearchFilters=$(echo "$strListLine" | cut -d ' ' -f 3)
+                
+                # the date is after the filter date
+                if [ "$(date -d "$strSearchFilters" +%s)" -gt "$(date -d "$strFilterDateAfter" +%s)" ]; then
+                    bListLogAccepted=true;
+                # the date is not after the filter date did not pass the filter
+                else
+                    bListLogAccepted=false;
+                fi
+            fi
+
+            # filter by date before
+            if [ $bFilterDateBefore = true ] && [ $bListLogAccepted = true ]; then
+                # get the date from the line
+                strSearchFilters=$(echo "$strListLine" | cut -d ' ' -f 3)
+                
+                # the date is before the filter date
+                if [ "$(date -d "$strSearchFilters" +%s)" -lt "$(date -d "$strFilterDateBefore" +%s)" ]; then
+                    bListLogAccepted=true;
+                
+                # the date is not before the filter date did not pass the filter
+                else
+                    bListLogAccepted=false;
+                fi
+            fi
+            
+            if [ $bListLogAccepted = true ]; then
+                strListFiles="$strListFileCheck $strListFiles"
+            fi
+        fi
+
+    done < "$MOLE_RC"
+
+    # sort the files
+    strListFiles=$(echo "$strListFiles" | tr ' ' '\n' | sort | tr '\n' ' ')
+    strListFiles=$(echo "$strListFiles" | sed 's/^ *//g')
+
+
+    # [4.3] - Printing the files
+    if [ -n "$strListFiles" ]; then
+
+        # print the files
+        for (( i=1; i<=$(echo "$strListFiles" | wc -w); i++ )); do
+
+            # get the List Path and then the line from the molerc file
+            strListFile=$(echo "$strListFiles" | cut -d ' ' -f $i)
+            strListPath="$strParseDirectoryPath/$strListFile"
+            strListLine=$(grep "$strListPath" "$MOLE_RC")
+
+            # get the groups from the line
+            strListGroups=$(echo "$strListLine" | cut -d ' ' -f 5-)
+            strListGroups=$(echo "$strListGroups" | sed 's/ /,/g')
+            
+            # get the number of characters in the file name
+            iListIndentNum=$(($iListCharNum - ${#strListFile} + 1))
+
+            # [4.4] - print the file names and the group into the list            
+            # print the file name
+            printf "%s:" "$strListFile"
+
+            # print the indent
+            for (( j=1; j<=$iListIndentNum; j++ )); do
+                printf " "
+            done
+
+            # print the groups
+            if [ -n "$strListGroups" ]; then
+                printf "%s\n" "$strListGroups"
+            else 
+                printf "-"
+                printf "\n"
+            fi
+        done
+    fi
+
+fi
+
+# - - - - - - - - - - - - - - - - #
+#      List opened files [5]      #
+# - - - - - - - - - - - - - - - - #
+
+# print log
 
 
 
@@ -838,8 +1014,15 @@ fi
         # reading the file        
         n=1    
         while read -r line; do
-            # reading each line
-            echo "- $n. -- $line"
+            
+            # get first line
+            strTmp=$(echo "$line" | awk '{print $1}')
+
+            # print the relevant lines
+            if [ "$strTmp" != "#" ]; then
+                echo "- $n. -- $line"
+            fi
+
             n=$((n+1))
         done < "$MOLE_RC"
     fi
@@ -850,25 +1033,25 @@ fi
 
         # main
         # printing the option
+        echo ""
         echo "[List all the opened files]"
-        echo "- bParseList = true"
-        echo "- strParseDirectoryPath = $strParseDirectoryPath"
+        echo "- strParseDirectoryPath       - $strParseDirectoryPath"
 
         # filters
         # printing the group filter
         if [ $bFilterGroup = true ]; then
             echo "- bFilterGroup = true"
-            echo "- strFilterGroup = $strFilterGroup"
+            echo "- strFilterGroup          - $strFilterGroup"
         fi
         # printing the date after filter
         if [ $bFilterDateAfter = true ]; then
             echo "- bFilterDateAfter = true"
-            echo "- strFilterDateAfter = $strFilterDateAfter"
+            echo "- strFilterDateAfter      - $strFilterDateAfter"
         fi
         # printing the date before filter
         if [ $bFilterDateBefore = true ]; then
             echo "- bFilterDateBefore = true"
-            echo "- strFilterDateBefore = $strFilterDateBefore"
+            echo "- strFilterDateBefore     - $strFilterDateBefore"
         fi
     fi
 
