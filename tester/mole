@@ -371,7 +371,6 @@ case $1 in
                         bParseDirectory=true
                         strParseDirectoryPath=$PWD
                     else
-
                         bErrorParsePath=true
                     fi
                 fi
@@ -379,6 +378,7 @@ case $1 in
         fi
         ;;
 esac
+
 
 # Path parsing/fixing
 # - file
@@ -391,12 +391,6 @@ if [ $bParseFile = true ]; then
         strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{2,\}/ \//')
         strParseFilePath=$(echo "$strParseFilePath" | sed 's/^[^ ]* //')
     fi
-
-    # if the path is home path replace it with real path
-    if [[ "$strParseFilePath" == ~* ]]; then
-        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^~\//\/home\/'$USER'\//')
-    fi
-
 fi
 # - directory, list
 if [ $bParseDirectory = true ] || [ $bParseList = true ]; then
@@ -408,44 +402,6 @@ if [ $bParseDirectory = true ] || [ $bParseList = true ]; then
         strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/\/\{2,\}/ \//')
         strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/^[^ ]* //')
     fi
-
-    # if the path is home path replace it with real path
-    if [[ "$strParseFilePath" == ~* ]]; then
-        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^~\//\/home\/'$USER'\//')
-    fi
-
-fi
-
-# Create a new file when the path is wrong but the subpath directory exists
-if [ $bErrorParsePath = true ]; then
-    strParseFilePath="$PWD/${*: -1}"
-
-    # remove n number of "/" from the end of the path
-    strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{1,\}$//')
-
-    # if the path consists of two paths separated delete the first one
-    if [[ "$strParseFilePath" == *\/\/* ]]; then
-        strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{2,\}/ \//')
-        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^[^ ]* //')
-    fi
-
-    # delete the last "/string" from the path"
-    strTmp=$(echo "$strParseFilePath" | sed 's/\/[^\/]*$//')
-
-    if [ -d "$strTmp" ]; then
-        bParseFile=true
-        bErrorParsePath=false
-    fi
-fi
-
-# real path the strParseFilePath or strParseDirectoryPath
-# - file
-if [ $bParseFile = true ]; then
-    strParseFilePath=$(realpath "$strParseFilePath")
-fi
-# - directory, list
-if [ $bParseDirectory = true ]; then
-    strParseDirectoryPath=$(realpath "$strParseDirectoryPath")
 fi
 
 
@@ -821,7 +777,7 @@ if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
 
 
     # [3.4] opening the file
-    #$strEnvEditor $strParseFilePath
+    $strEnvEditor $strParseFilePath
 fi
 
 
@@ -1177,136 +1133,136 @@ fi
 #           Debug           #
 # - - - - - - - - - - - - - #
 
-    # [1] 
-    if [ $bParseHelp = true ]; then
-        
-        # main
-        # printing the option
-        echo "- - [Print help message] - -"
-        echo "- bHelpArg                - true"
-    fi
-
-
-    # [2]
-    if [ $bParseDirectory = true ]; then
-
-        # main
-        # printing the option
-        echo "- - [Open file in a directory] - -"
-        echo "- strParseDirectoryPath   - $strParseDirectoryPath"
-        echo "- strParseFilePath        - $strParseFilePath"
-
-        # most often argument
-        if [ $bParseDirectoryMost = true ]; then
-            echo "- bParseDirectoryMost     - true"
-        fi
-
-        # filters
-        # printing the group filter
-        if [ $bFilterGroup = true ]; then
-            echo "- strFilterGroup          - $strFilterGroup"
-        fi
-        # printing the date after filter
-        if [ $bFilterDateAfter = true ]; then
-            echo "- strFilterDateAfter      - $strFilterDateAfter"
-        fi
-        # printing the date before filter
-        if [ $bFilterDateBefore = true ]; then
-            echo "- strFilterDateBefore     - $strFilterDateBefore"
-        fi
-
-    fi
-
-
-    # [3]
-    if [ $bParseFile = true ] && [ $bParseDirectory = false ]; then
-
-        # main
-        # printing the option
-        echo " - - [Open a specific file] - -"
-        echo "- strParseFilePath        - $strParseFilePath"
-
-        # group
-        # printing the group
-        if [ $bParseFileGroup = true ]; then
-            echo "- strParseFileGroup       - $strParseFileGroup"
-        fi 
-
-    fi
-
-
-    # [3]
-    if [ $bParseFile = true ]; then
-        
-        # main
-        echo ""
-        echo "- - [Reading file molerc] - -"
-
-        # reading the file        
-        n=1    
-        while read -r line; do
-            
-            # get first line
-            strTmp=$(echo "$line" | awk '{print $1}')
-
-            # print the relevant lines
-            if [ "$strTmp" != "#" ]; then
-                echo "- $n. -- $line"
-            fi
-
-            n=$((n+1))
-        done < "$MOLE_RC"
-    fi
-
-
-    # [4]
-    if [ $bParseList = true ]; then
-
-        # main
-        # printing the option
-        echo ""
-        echo "[List all the opened files]"
-        echo "- strParseDirectoryPath       - $strParseDirectoryPath"
-
-        # filters
-        # printing the group filter
-        if [ $bFilterGroup = true ]; then
-            echo "- bFilterGroup = true"
-            echo "- strFilterGroup          - $strFilterGroup"
-        fi
-        # printing the date after filter
-        if [ $bFilterDateAfter = true ]; then
-            echo "- bFilterDateAfter = true"
-            echo "- strFilterDateAfter      - $strFilterDateAfter"
-        fi
-        # printing the date before filter
-        if [ $bFilterDateBefore = true ]; then
-            echo "- bFilterDateBefore = true"
-            echo "- strFilterDateBefore     - $strFilterDateBefore"
-        fi
-    fi
-
-    # [5]
-    if [ $bParseLog = true ]; then
-        # main
-        # printing the option
-        echo "[Print Secret Log]"
-        echo "- strParseDirectoryPath = $strParseDirectoryPath"
-
-        # filters
-        # printing the date after filter
-        if [ $bFilterDateAfter = true ]; then
-            echo "- bFilterDateAfter = true"
-            echo "- strFilterDateAfter = $strFilterDateAfter"
-        fi
-
-        # printing the date before filter
-        if [ $bFilterDateBefore = true ]; then
-            echo "- bFilterDateBefore = true"
-            echo "- strFilterDateBefore = $strFilterDateBefore"
-        fi
-    fi
-
+#    # [1] 
+#    if [ $bParseHelp = true ]; then
+#        
+#        # main
+#        # printing the option
+#        echo "- - [Print help message] - -"
+#        echo "- bHelpArg                - true"
+#    fi
+#
+#
+#    # [2]
+#    if [ $bParseDirectory = true ]; then
+#
+#        # main
+#        # printing the option
+#        echo "- - [Open file in a directory] - -"
+#        echo "- strParseDirectoryPath   - $strParseDirectoryPath"
+#        echo "- strParseFilePath        - $strParseFilePath"
+#
+#        # most often argument
+#        if [ $bParseDirectoryMost = true ]; then
+#            echo "- bParseDirectoryMost     - true"
+#        fi
+#
+#        # filters
+#        # printing the group filter
+#        if [ $bFilterGroup = true ]; then
+#            echo "- strFilterGroup          - $strFilterGroup"
+#        fi
+#        # printing the date after filter
+#        if [ $bFilterDateAfter = true ]; then
+#            echo "- strFilterDateAfter      - $strFilterDateAfter"
+#        fi
+#        # printing the date before filter
+#        if [ $bFilterDateBefore = true ]; then
+#            echo "- strFilterDateBefore     - $strFilterDateBefore"
+#        fi
+#
+#    fi
+#
+#
+#    # [3]
+#    if [ $bParseFile = true ] && [ $bParseDirectory = false ]; then
+#
+#        # main
+#        # printing the option
+#        echo " - - [Open a specific file] - -"
+#        echo "- strParseFilePath        - $strParseFilePath"
+#
+#        # group
+#        # printing the group
+#        if [ $bParseFileGroup = true ]; then
+#            echo "- strParseFileGroup       - $strParseFileGroup"
+#        fi 
+#
+#    fi
+#
+#
+#    # [3]
+#    if [ $bParseFile = true ]; then
+#        
+#        # main
+#        echo ""
+#        echo "- - [Reading file molerc] - -"
+#
+#        # reading the file        
+#        n=1    
+#        while read -r line; do
+#            
+#            # get first line
+#            strTmp=$(echo "$line" | awk '{print $1}')
+#
+#            # print the relevant lines
+#            if [ "$strTmp" != "#" ]; then
+#                echo "- $n. -- $line"
+#            fi
+#
+#            n=$((n+1))
+#        done < "$MOLE_RC"
+#    fi
+#
+#
+#    # [4]
+#    if [ $bParseList = true ]; then
+#
+#        # main
+#        # printing the option
+#        echo ""
+#        echo "[List all the opened files]"
+#        echo "- strParseDirectoryPath       - $strParseDirectoryPath"
+#
+#        # filters
+#        # printing the group filter
+#        if [ $bFilterGroup = true ]; then
+#            echo "- bFilterGroup = true"
+#            echo "- strFilterGroup          - $strFilterGroup"
+#        fi
+#        # printing the date after filter
+#        if [ $bFilterDateAfter = true ]; then
+#            echo "- bFilterDateAfter = true"
+#            echo "- strFilterDateAfter      - $strFilterDateAfter"
+#        fi
+#        # printing the date before filter
+#        if [ $bFilterDateBefore = true ]; then
+#            echo "- bFilterDateBefore = true"
+#            echo "- strFilterDateBefore     - $strFilterDateBefore"
+#        fi
+#    fi
+#
+#    # [5]
+#    if [ $bParseLog = true ]; then
+#        # main
+#        # printing the option
+#        echo "[Print Secret Log]"
+#        echo "- strParseDirectoryPath = $strParseDirectoryPath"
+#
+#        # filters
+#        # printing the date after filter
+#        if [ $bFilterDateAfter = true ]; then
+#            echo "- bFilterDateAfter = true"
+#            echo "- strFilterDateAfter = $strFilterDateAfter"
+#        fi
+#
+#        # printing the date before filter
+#        if [ $bFilterDateBefore = true ]; then
+#            echo "- bFilterDateBefore = true"
+#            echo "- strFilterDateBefore = $strFilterDateBefore"
+#        fi
+#    fi
+#
 
 
 
