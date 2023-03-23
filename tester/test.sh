@@ -8,9 +8,13 @@ NC=$(tput sgr0)
 
 assert() {
     if [ "$1" != "$2" ]; then
-        echo "${RED}Assertion failed: $1 != $2${NC}"
+        echo "${RED}Assertion failed:"
+        echo " out              - $1"
+        echo " should have been - $2${NC}"
+        echo ""
     else
         echo "${GREEN}OK${NC}"
+        echo ""
     fi
 }
 

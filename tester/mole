@@ -379,7 +379,6 @@ case $1 in
         ;;
 esac
 
-
 # Path parsing/fixing
 # - file
 if [ $bParseFile = true ]; then
@@ -391,6 +390,12 @@ if [ $bParseFile = true ]; then
         strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{2,\}/ \//')
         strParseFilePath=$(echo "$strParseFilePath" | sed 's/^[^ ]* //')
     fi
+
+    # if the path is home path replace it with real path
+    if [[ "$strParseFilePath" == ~* ]]; then
+        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^~\//\/home\/'$USER'\//')
+    fi
+
 fi
 # - directory, list
 if [ $bParseDirectory = true ] || [ $bParseList = true ]; then
@@ -402,9 +407,23 @@ if [ $bParseDirectory = true ] || [ $bParseList = true ]; then
         strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/\/\{2,\}/ \//')
         strParseDirectoryPath=$(echo "$strParseDirectoryPath" | sed 's/^[^ ]* //')
     fi
+
+    # if the path is home path replace it with real path
+    if [[ "$strParseFilePath" == ~* ]]; then
+        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^~\//\/home\/'$USER'\//')
+    fi
+
 fi
 
-
+# real path the strParseFilePath or strParseDirectoryPath
+# - file
+if [ $bParseFile = true ]; then
+    strParseFilePath=$(realpath "$strParseFilePath")
+fi
+# - directory, list
+if [ $bParseDirectory = true ]; then
+    strParseDirectoryPath=$(realpath "$strParseDirectoryPath")
+fi
 
 # - - - - - - - - - - - - - - - - - #
 #      Enviroment variables [1]     #
@@ -495,7 +514,7 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
     if [ $bSearchDirectoryAccepted = true ]; then
         
         # get the file names from directory and put them in a string
-        strSearchFiles=$(ls "$strParseDirectoryPath")
+        strSearchFiles=$(ls -a "$strParseDirectoryPath")
         strSearchFiles=$(echo "$strSearchFiles" | tr '\n' ' ')
 
         # get the number of strings from the string -> used for the for loop
@@ -505,7 +524,6 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
         if [ $iSearchFilesNum -eq 0 ]; then
             bErrorSearchNoFiles=true
         fi
-
 
         # [2.3] - searching for the right file in the directory
         for (( i=1; i<="$iSearchFilesNum"; i++ )); do
@@ -517,9 +535,18 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
             strSearchFile=$(echo "$strSearchFiles" | cut -d ' ' -f $i)
             strSearchFile="$strParseDirectoryPath/$strSearchFile"
             
-            # get line from file molerc which first argument is $strSearchFile
-            strSearchCheckLine=$(grep -E "^$strSearchFile" "$MOLE_RC")
+            # get line from file molerc where the first argument is $strSearchFile and where # is not the first argument
+            strSearchCheckLine=""
+            strSearchCheckLine=$(grep -E "^$strSearchFile " "$MOLE_RC")
 
+            # strSearchCheckLine is empty
+            if [ -z "$strSearchCheckLine" ]; then
+                bSearchFileAccepted=false
+                continue;
+            fi
+
+            #echo "$strSearchCheckLine"
+            #echo "$strSearchFile"
 
             # [2.4] - checking if the file is accepted by the filters
             # filter by group
@@ -551,6 +578,7 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
             # filter by date after
             if [ $bFilterDateAfter = true ] && [ $bSearchFileAccepted = true ]; then
                 # get the date from the line
+                strSearchFilters=""
                 strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 3)
                 
                 # the date is after the filter date
@@ -565,6 +593,7 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
             # filter by date before
             if [ $bFilterDateBefore = true ] && [ $bSearchFileAccepted = true ]; then
                 # get the date from the line
+                strSearchFilters=""
                 strSearchFilters=$(echo "$strSearchCheckLine" | cut -d ' ' -f 3)
                 
                 # the date is before the filter date
@@ -586,7 +615,8 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
                     
                     # find the file which was opened the most
                     iTmp="$(echo "$strSearchCheckLine" | cut -d ' ' -f 2)"
-                    if [ "$iTmp" -gt $iSearchOpenNum ]; then
+                    
+                    if [ "$iTmp" -gt "$iSearchOpenNum" ] || [ "$iTmp" -eq "$iSearchOpenNum" ]; then
                         
                         # save the data for repeating the check
                         iSearchOpenNum=$iTmp
@@ -639,6 +669,28 @@ if [ $bParseDirectory = true ] && [ $bEnvErrorMole = false ]; then
     fi
 fi
 
+# Create a new file when the path is wrong but the subpath directory exists
+if [ $bErrorParsePath = true ]; then
+    strParseFilePath="$PWD/${*: -1}"
+
+    # remove n number of "/" from the end of the path
+    strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{1,\}$//')
+
+    # if the path consists of two paths separated delete the first one
+    if [[ "$strParseFilePath" == *\/\/* ]]; then
+        strParseFilePath=$(echo "$strParseFilePath" | sed 's/\/\{2,\}/ \//')
+        strParseFilePath=$(echo "$strParseFilePath" | sed 's/^[^ ]* //')
+    fi
+
+    # delete the last "/string" from the path"
+    strTmp=$(echo "$strParseFilePath" | sed 's/\/[^\/]*$//')
+
+    if [ -d "$strTmp" ]; then
+        bParseFile=true
+        bErrorParsePath=false
+        bErrorParseFilters=false
+    fi
+fi
 
 
 # - - - - - - - - - - - - - - - - - #
@@ -754,9 +806,24 @@ if [ $bParseFile = true ] && [ $bEnvErrorMole = false ]; then
                 strOpenLogPath1=$strOpenLogPath2
                 strOpenLogPath2=$(echo "$strOpenLine" | awk '{print $2}')
 
+                # get the last part of the path divaded by '/'
+                strTmp1=$(echo "$strOpenLogPath1" | awk -F'/' '{print $NF}')
+                strTmp2=$(echo "$strOpenLogPath2" | awk -F'/' '{print $NF}')
+                strTmp3=$(echo "$strParseFilePath" | awk -F'/' '{print $NF}')
+
+                # delete every non-alphanumeric character from the path except for the '/' character
+                strTmp1=$(echo "$strOpenLogPath1" | sed 's/[^a-zA-Z0-9\/]//g')
+                strTmp2=$(echo "$strOpenLogPath2" | sed 's/[^a-zA-Z0-9\/]//g')
+                strTmp3=$(echo "$strParseFilePath" | sed 's/[^a-zA-Z0-9\/]//g')
+
+                # make them all lowercase
+                strTmp1=$(echo "$strTmp1" | tr '[:upper:]' '[:lower:]')
+                strTmp2=$(echo "$strTmp2" | tr '[:upper:]' '[:lower:]')
+                strTmp3=$(echo "$strTmp3" | tr '[:upper:]' '[:lower:]')
+
                 # given path is lexicographically first or in the the middle of the log
-                if [[ "$strOpenLogPath1" < "$strParseFilePath" ]] || [[ "$strOpenLogPath1" == "$strParseFilePath" ]]; then 
-                    if [[ $strParseFilePath < $strOpenLogPath2 ]]; then
+                if [[ "$strTmp1" < "$strTmp3" ]] || [[ "$strTmp1" == "$strTmp3" ]]; then 
+                    if [[ "$strTmp3" < "$strTmp2" ]]; then
                         
                         # insert the new line above the current line
                         awk -v line="$strOpenLogNewLine\n$strOpenLine" -v num="$iTmp" 'NR==num{print line} NR!=num{print}' "$MOLE_RC" > "$MOLE_RC.tmp" && mv "$MOLE_RC.tmp" "$MOLE_RC"
@@ -816,12 +883,6 @@ if [ $bParseList = true ] && [ $bEnvErrorMole = false ]; then
         # get the rest of the path
         strListDirectoryCheck=$(echo "$strTmp" | sed "s/$strListFileCheck//g")
         strListDirectoryCheck=$(echo "$strListDirectoryCheck" | sed 's/.$//')
-
-        # get the number characters in the file name and save the biggest number
-        iTmp=${#strListFileCheck}
-        if [ $iTmp -gt $iListCharNum ]; then
-            iListCharNum=$iTmp
-        fi
 
         # save the file if the molerc directory is the same as the directory from the strParseDirectoryPath
         if [ "$strListDirectoryCheck" = "$strParseDirectoryPath" ]; then
@@ -892,8 +953,17 @@ if [ $bParseList = true ] && [ $bEnvErrorMole = false ]; then
     done < "$MOLE_RC"
 
     # sort the files
-    strListFiles=$(echo "$strListFiles" | tr ' ' '\n' | sort | tr '\n' ' ')
+    strListFiles=$(echo "$strListFiles" | tr ' ' '\n' | sort -f -d | tr '\n' ' ')
     strListFiles=$(echo "$strListFiles" | sed 's/^ *//g')
+
+    # calculate the number of spaces for the indent
+    for (( i=1; i<= $(echo "$strListFiles" | wc -w); i++ )); do
+        strTmp=$(echo "$strListFiles" | cut -d ' ' -f $i)
+        iTmp2=${#strTmp}
+        if [ "$iTmp2" -gt "$iListCharNum" ]; then
+            iListCharNum="$iTmp2"
+        fi
+    done
 
 
     # [4.3] - Printing the files
@@ -925,6 +995,9 @@ if [ $bParseList = true ] && [ $bEnvErrorMole = false ]; then
 
             # print the groups
             if [ -n "$strListGroups" ]; then
+
+                # sort the groups and print them
+                strListGroups=$(echo "$strListGroups" | tr ',' '\n' | sort -f -d | tr '\n' ',' | sed 's/,$//g')
                 printf "%s\n" "$strListGroups"
             else 
                 printf "-"
@@ -956,7 +1029,7 @@ bSecretLogAccepted=false
 if [ $bParseLog = true ]; then
 
     # [ 5.1 ] - create the secret log file
-    strSecretLogPath=$(printf "%s/.mole/log_%s_%s" "$HOME" "$USER" "$(date +%Y-%m-%d-%H-%M-%S)")
+    strSecretLogPath=$(printf "%s/.mole/log_%s_%s" "$HOME" "$USER" "$(date +%Y-%m-%d-%H_%M-%S)")
     
 
     # [ 5.2 ] - add the logs to the secret log file
@@ -1046,7 +1119,7 @@ if [ $bParseLog = true ]; then
 
 
     # [ 5.3 ] - zip the secret log file with bz2
-    #bzip2 "$strSecretLogPath"
+    bzip2 "$strSecretLogPath"
     
 fi
 
@@ -1262,7 +1335,7 @@ fi
 #            echo "- strFilterDateBefore = $strFilterDateBefore"
 #        fi
 #    fi
-#
+
 
 
 
